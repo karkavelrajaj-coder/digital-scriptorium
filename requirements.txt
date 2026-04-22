@@ -1,0 +1,8 @@
+iiif-prezi3==3.1.0
+openai==1.109.1
+pillow==10.4.0
+python-dotenv==1.2.1
+requests==2.32.5
+streamlit==1.55.0
+supabase==2.28.3
+websockets==14.2
