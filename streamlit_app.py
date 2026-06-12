@@ -64,7 +64,7 @@ def st_canvas_safe(
             background_image.convert("RGB").save(buffered, format="JPEG", quality=75)
             bg_b64 = base64.b64encode(buffered.getvalue()).decode()
             bg_url = f"data:image/jpeg;base64,{bg_b64}"
-            background_color = ""
+            background_color = "#0e1117" # Match premium dark theme
             
             # Deep Injection: Create a Fabric.js background image object
             bg_obj = {
