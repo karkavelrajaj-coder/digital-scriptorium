@@ -4,36 +4,6 @@ import json
 import base64
 import io
 
-# --- Monkey-patch for streamlit-drawable-canvas compatibility with modern Streamlit ---
-# MUST BE DONE BEFORE IMPORTING st_canvas
-import streamlit.elements.image as st_image
-if not hasattr(st_image, 'image_to_url'):
-    try:
-        from streamlit.elements.lib.image_utils import image_to_url as _image_to_url
-        
-        def patched_image_to_url(image, layout_config, clamp, channels, output_format, image_id):
-            # streamlit-drawable-canvas passes 'width' as an int, but modern Streamlit expects a LayoutConfig object
-            if isinstance(layout_config, int):
-                class FakeLayoutConfig:
-                    def __init__(self, width): self.width = width
-                layout_config = FakeLayoutConfig(width=layout_config)
-            return _image_to_url(image, layout_config, clamp, channels, output_format, image_id)
-            
-        st_image.image_to_url = patched_image_to_url
-    except ImportError:
-        try:
-            from streamlit.runtime.image_util import image_to_url
-            st_image.image_to_url = image_to_url
-        except ImportError:
-            pass
-
-from ai_processor import analyze_image_bytes, load_stored_metadata
-from storage_manager import StorageManager
-import streamlit.components.v1 as components
-from PIL import Image, ImageOps
-from streamlit_drawable_canvas import st_canvas
-import math
-
 # --- Streamlit UI Config ---
 st.set_page_config(
     page_title="Digital Scriptorium | Archival Intelligence",
@@ -53,7 +23,7 @@ st.markdown("""
     }
 
     /* SPECIFIC FIX: Force Dark Background for the whole app */
-    .stApp {
+    .stApp, [data-testid="stSidebar"] {
         background-color: #0e1117 !important;
     }
 
