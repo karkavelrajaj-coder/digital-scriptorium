@@ -67,7 +67,9 @@ def st_canvas_safe(
             # Diagnostic (Hidden)
             st.write(f"<!-- Canvas BG Ready: {len(bg_url)} chars -->", unsafe_allow_html=True)
     
-    initial_drawing = {"version": "4.4.0"} if initial_drawing is None else initial_drawing
+    if initial_drawing is None:
+        initial_drawing = {"version": "4.4.0", "objects": []}
+    
     initial_drawing["background"] = background_color
 
     # Call the internal component function directly
