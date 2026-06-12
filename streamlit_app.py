@@ -4,28 +4,7 @@ import json
 import base64
 import io
 
-# --- Monkey-patch for streamlit-drawable-canvas compatibility with modern Streamlit ---
-# MUST BE DONE BEFORE IMPORTING st_canvas
-import streamlit.elements.image as st_image
-if not hasattr(st_image, 'image_to_url'):
-    try:
-        from streamlit.elements.lib.image_utils import image_to_url as _image_to_url
-        
-        def patched_image_to_url(image, layout_config, clamp, channels, output_format, image_id):
-            # streamlit-drawable-canvas passes 'width' as an int, but modern Streamlit expects a LayoutConfig object
-            if isinstance(layout_config, int):
-                class FakeLayoutConfig:
-                    def __init__(self, width): self.width = width
-                layout_config = FakeLayoutConfig(width=layout_config)
-            return _image_to_url(image, layout_config, clamp, channels, output_format, image_id)
-            
-        st_image.image_to_url = patched_image_to_url
-    except ImportError:
-        try:
-            from streamlit.runtime.image_util import image_to_url
-            st_image.image_to_url = image_to_url
-        except ImportError:
-            pass
+# Note: streamlit-drawable-canvas is handled via st_canvas_safe wrapper below to bypass image serving issues.
 
 from ai_processor import analyze_image_bytes, load_stored_metadata
 from storage_manager import StorageManager
@@ -77,20 +56,21 @@ def st_canvas_safe(
     bg_url = None
     if background_image:
         if isinstance(background_image, Image.Image):
-            # Manually resize
+            # Manually resize to ensure it fits perfectly
             background_image = background_image.resize((width, height))
-            # Manually convert to base64
+            # Manually convert to base64 (JPEG is faster/smaller)
             buffered = io.BytesIO()
-            background_image.save(buffered, format="PNG")
+            background_image.convert("RGB").save(buffered, format="JPEG", quality=85)
             bg_b64 = base64.b64encode(buffered.getvalue()).decode()
-            bg_url = f"data:image/png;base64,{bg_b64}"
+            bg_url = f"data:image/jpeg;base64,{bg_b64}"
             background_color = ""
+            # Diagnostic (Hidden)
+            st.write(f"<!-- Canvas BG Ready: {len(bg_url)} chars -->", unsafe_allow_html=True)
     
     initial_drawing = {"version": "4.4.0"} if initial_drawing is None else initial_drawing
     initial_drawing["background"] = background_color
 
     # Call the internal component function directly
-    # We use sdc._component_func which was declared in the module
     comp_val = sdc._component_func(
         fillColor=fill_color,
         strokeWidth=stroke_width,
@@ -105,12 +85,12 @@ def st_canvas_safe(
         displayToolbar=display_toolbar,
         displayRadius=point_display_radius,
         key=key,
-        default=None,
+        default={"data": None, "raw": None}, # Set default to avoid NoneType issues
     )
     
-    if comp_val is None:
+    if comp_val is None or comp_val.get("data") is None:
         from streamlit_drawable_canvas import CanvasResult
-        return CanvasResult()
+        return CanvasResult(json_data=initial_drawing)
 
     # Result parsing
     return sdc.CanvasResult(
