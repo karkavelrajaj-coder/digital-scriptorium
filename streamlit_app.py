@@ -54,31 +54,72 @@ def st_canvas_safe(
     import numpy as np
     
     bg_url = None
+    bg_obj = None
     if background_image:
         if isinstance(background_image, Image.Image):
-            # Manually resize to ensure it fits perfectly
+            # Manually resize
             background_image = background_image.resize((width, height))
-            # Manually convert to base64 (JPEG is faster/smaller)
+            # Manually convert to base64
             buffered = io.BytesIO()
-            background_image.convert("RGB").save(buffered, format="JPEG", quality=85)
+            background_image.convert("RGB").save(buffered, format="JPEG", quality=75)
             bg_b64 = base64.b64encode(buffered.getvalue()).decode()
             bg_url = f"data:image/jpeg;base64,{bg_b64}"
             background_color = ""
-            # Diagnostic (Hidden)
-            st.write(f"<!-- Canvas BG Ready: {len(bg_url)} chars -->", unsafe_allow_html=True)
+            
+            # Deep Injection: Create a Fabric.js background image object
+            bg_obj = {
+                "type": "image",
+                "version": "4.4.0",
+                "originX": "left",
+                "originY": "top",
+                "left": 0,
+                "top": 0,
+                "width": width,
+                "height": height,
+                "fill": "rgb(0,0,0)",
+                "stroke": None,
+                "strokeWidth": 0,
+                "strokeDashArray": None,
+                "strokeLineCap": "butt",
+                "strokeDashOffset": 0,
+                "strokeLineJoin": "miter",
+                "strokeUniform": False,
+                "strokeMiterLimit": 4,
+                "scaleX": 1,
+                "scaleY": 1,
+                "angle": 0,
+                "flipX": False,
+                "flipY": False,
+                "opacity": 1,
+                "shadow": None,
+                "visible": True,
+                "backgroundColor": "",
+                "fillRule": "nonzero",
+                "paintFirst": "fill",
+                "globalCompositeOperation": "source-over",
+                "skewX": 0,
+                "skewY": 0,
+                "cropX": 0,
+                "cropY": 0,
+                "src": bg_url,
+                "crossOrigin": None,
+                "filters": []
+            }
     
     if initial_drawing is None:
         initial_drawing = {"version": "4.4.0", "objects": []}
     
     initial_drawing["background"] = background_color
-
+    if bg_obj:
+        initial_drawing["backgroundImage"] = bg_obj
+    
     # Call the internal component function directly
     comp_val = sdc._component_func(
         fillColor=fill_color,
         strokeWidth=stroke_width,
         strokeColor=stroke_color,
         backgroundColor=background_color,
-        backgroundImageURL=bg_url,
+        backgroundImageURL=bg_url, # Keep as fallback
         realtimeUpdateStreamlit=update_streamlit and (drawing_mode != "polygon"),
         canvasHeight=height,
         canvasWidth=width,
@@ -87,7 +128,7 @@ def st_canvas_safe(
         displayToolbar=display_toolbar,
         displayRadius=point_display_radius,
         key=key,
-        default={"data": None, "raw": None}, # Set default to avoid NoneType issues
+        default={"data": None, "raw": None},
     )
     
     if comp_val is None or comp_val.get("data") is None:
