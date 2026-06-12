@@ -31,7 +31,94 @@ from ai_processor import analyze_image_bytes, load_stored_metadata
 from storage_manager import StorageManager
 import streamlit.components.v1 as components
 from PIL import Image, ImageOps
-from streamlit_drawable_canvas import st_canvas
+import streamlit_drawable_canvas as sdc
+_orig_st_canvas = sdc.st_canvas
+
+def st_canvas_wrapped(*args, **kwargs):
+    """
+    A robust wrapper for st_canvas that bypasses Streamlit's buggy internal image serving.
+    It converts PIL images to Base64 Data URLs before they reach the internal st_canvas logic.
+    """
+    bg_img = kwargs.get("background_image")
+    if bg_img and isinstance(bg_img, Image.Image):
+        # Resize to requested dimensions manually
+        h = kwargs.get("height", 400)
+        w = kwargs.get("width", 600)
+        bg_img = bg_img.resize((w, h))
+        
+        # Convert to Base64
+        buffered = io.BytesIO()
+        bg_img.save(buffered, format="PNG")
+        bg_b64 = base64.b64encode(buffered.getvalue()).decode()
+        bg_url = f"data:image/png;base64,{bg_b64}"
+        
+        # Inject the URL and REMOVE the PIL image to avoid internal processing
+        kwargs["background_image"] = None
+        # We need to manually set the backgroundImageURL prop in the underlying component call
+        # But wait, st_canvas doesn't expose it directly.
+        # Let's try setting background_color to "" and then monkey-patching the internal call?
+        # Actually, if we set background_image to None, st_canvas will return None for background_image_url.
+    
+    return _orig_st_canvas(*args, **kwargs)
+
+# Wait, the above won't work because we can't easily pass the URL to the underlying React component 
+# without rewriting the whole st_canvas function.
+
+# BETTER VERSION: Completely redefine st_canvas to be safe
+def st_canvas_safe(
+    fill_color="#eee", stroke_width=20, stroke_color="black", background_color="",
+    background_image=None, update_streamlit=True, height=400, width=600,
+    drawing_mode="freedraw", initial_drawing=None, display_toolbar=True,
+    point_display_radius=3, key=None
+):
+    from hashlib import md5
+    import numpy as np
+    
+    bg_url = None
+    if background_image:
+        if isinstance(background_image, Image.Image):
+            # Manually resize
+            background_image = background_image.resize((width, height))
+            # Manually convert to base64
+            buffered = io.BytesIO()
+            background_image.save(buffered, format="PNG")
+            bg_b64 = base64.b64encode(buffered.getvalue()).decode()
+            bg_url = f"data:image/png;base64,{bg_b64}"
+            background_color = ""
+    
+    initial_drawing = {"version": "4.4.0"} if initial_drawing is None else initial_drawing
+    initial_drawing["background"] = background_color
+
+    # Call the internal component function directly
+    # We use sdc._component_func which was declared in the module
+    comp_val = sdc._component_func(
+        fillColor=fill_color,
+        strokeWidth=stroke_width,
+        strokeColor=stroke_color,
+        backgroundColor=background_color,
+        backgroundImageURL=bg_url,
+        realtimeUpdateStreamlit=update_streamlit and (drawing_mode != "polygon"),
+        canvasHeight=height,
+        canvasWidth=width,
+        drawingMode=drawing_mode,
+        initialDrawing=initial_drawing,
+        displayToolbar=display_toolbar,
+        displayRadius=point_display_radius,
+        key=key,
+        default=None,
+    )
+    
+    if comp_val is None:
+        from streamlit_drawable_canvas import CanvasResult
+        return CanvasResult()
+
+    # Result parsing
+    return sdc.CanvasResult(
+        np.asarray(sdc._data_url_to_image(comp_val["data"])),
+        comp_val["raw"],
+    )
+
+st_canvas = st_canvas_safe
 import math
 
 # --- Streamlit UI Config ---
