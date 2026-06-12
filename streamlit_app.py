@@ -3,10 +3,36 @@ import os
 import json
 import base64
 import io
+
+# --- Monkey-patch for streamlit-drawable-canvas compatibility with modern Streamlit ---
+# MUST BE DONE BEFORE IMPORTING st_canvas
+import streamlit.elements.image as st_image
+if not hasattr(st_image, 'image_to_url'):
+    try:
+        from streamlit.elements.lib.image_utils import image_to_url as _image_to_url
+        
+        def patched_image_to_url(image, layout_config, clamp, channels, output_format, image_id):
+            # streamlit-drawable-canvas passes 'width' as an int, but modern Streamlit expects a LayoutConfig object
+            if isinstance(layout_config, int):
+                class FakeLayoutConfig:
+                    def __init__(self, width): self.width = width
+                layout_config = FakeLayoutConfig(width=layout_config)
+            return _image_to_url(image, layout_config, clamp, channels, output_format, image_id)
+            
+        st_image.image_to_url = patched_image_to_url
+    except ImportError:
+        try:
+            from streamlit.runtime.image_util import image_to_url
+            st_image.image_to_url = image_to_url
+        except ImportError:
+            pass
+
 from ai_processor import analyze_image_bytes, load_stored_metadata
 from storage_manager import StorageManager
 import streamlit.components.v1 as components
-from PIL import Image
+from PIL import Image, ImageOps
+from streamlit_drawable_canvas import st_canvas
+import math
 
 # --- Streamlit UI Config ---
 st.set_page_config(
@@ -193,17 +219,17 @@ with st.sidebar:
             file_id = uploaded_file.name
             if file_id not in st.session_state.images:
                 bytes_data = uploaded_file.read()
-                with st.spinner(f"Archiving {file_id} to cloud..."):
-                    public_url = storage.upload_image(bytes_data, file_id)
-                
                 try:
                     img = Image.open(io.BytesIO(bytes_data))
                     w, h = img.size
                 except Exception:
                     w, h = 1000, 1000
                 
+                with st.spinner(f"Archiving {file_id} to cloud..."):
+                    public_url = storage.upload_image(bytes_data, file_id)
+                
                 st.session_state.images[file_id] = {
-                    "bytes": bytes_data, # kept for local display speed
+                    "bytes": bytes_data, 
                     "public_url": public_url,
                     "width": w,
                     "height": h
@@ -261,33 +287,105 @@ image_bytes = image_data['bytes']
 cloud_manifest_url = "#"
 expected_manifest_url = "https://app/manifest.json"
 
-col_view, col_meta = st.columns([1.2, 1], gap="large")
+col_view, col_meta = st.columns([1.5, 1], gap="large")
 
 # Left side: Image and Analysis
 with col_view:
-    st.subheader("🔬 Visual Intelligence Scan")
-    st.image(image_bytes, width="stretch")
+    st.subheader("🔬 Visual Intelligence & Curation")
     
-    is_processed = current_id in st.session_state.metadata
-    analyze_label = "✅ Analysis Complete" if is_processed else "✨ Run Deep Analysis (AI Vision)"
+    tab_auto, tab_manual = st.tabs(["✨ AI Auto-Detect", "🖋️ Manual Curation"])
     
-    if st.button(analyze_label, key="analyze_btn", width="stretch", disabled=st.session_state.is_analyzing or is_processed):
-        st.session_state.is_analyzing = True
-        st.rerun() # Ensure UI reflects 'is_analyzing' immediately
-    
-    # This block runs after the rerun triggered above
-    if st.session_state.is_analyzing:
-        with st.spinner("Decoding document semiotics..."):
-            result = analyze_image_bytes(image_bytes, current_id)
-            if "error" not in result:
-                st.session_state.metadata[current_id] = result
-                st.session_state.is_analyzing = False
-                st.success("Deep Analysis Completed")
-                st.rerun()
-            else:
-                st.session_state.is_analyzing = False
-                st.error(f"Analysis Interrupted: {result['error']}")
-                st.rerun()
+    with tab_auto:
+        st.image(image_bytes, use_container_width=True)
+        
+        is_processed = current_id in st.session_state.metadata
+        analyze_label = "✅ Analysis Complete" if is_processed else "✨ Run Deep Analysis (AI Vision)"
+        
+        if st.button(analyze_label, key="analyze_btn", use_container_width=True, disabled=st.session_state.is_analyzing or is_processed):
+            st.session_state.is_analyzing = True
+            st.rerun() # Ensure UI reflects 'is_analyzing' immediately
+        
+        if st.session_state.is_analyzing:
+            with st.spinner("Decoding document semiotics..."):
+                result = analyze_image_bytes(image_bytes, current_id)
+                if "error" not in result:
+                    st.session_state.metadata[current_id] = result
+                    st.session_state.is_analyzing = False
+                    st.success("Deep Analysis Completed")
+                    st.rerun()
+                else:
+                    st.session_state.is_analyzing = False
+                    st.error(f"Analysis Interrupted: {result['error']}")
+                    st.rerun()
+
+    with tab_manual:
+        st.caption("Draw a rectangle on the image below, then give it a label.")
+        
+        # We need to scale the canvas to fit the column width but keep aspect ratio
+        canvas_width = 700 
+        scale_factor = canvas_width / image_data["width"]
+        canvas_height = int(image_data["height"] * scale_factor)
+        
+        # Load PIL image for the canvas
+        img_pil = Image.open(io.BytesIO(image_bytes))
+        
+        # Selection tools
+        tool_col1, tool_col2 = st.columns([2, 1])
+        with tool_col1:
+            manual_label = st.text_input("Annotation Label", placeholder="e.g., Archival Stamp, Signature", key=f"lab_{current_id}")
+        with tool_col2:
+            rect_color = st.color_picker("Color", "#FF0000")
+
+        canvas_result = st_canvas(
+            fill_color="rgba(255, 165, 0, 0.3)",
+            stroke_width=3,
+            stroke_color=rect_color,
+            background_image=img_pil,
+            update_streamlit=True,
+            height=canvas_height,
+            width=canvas_width,
+            drawing_mode="rect",
+            key=f"canvas_{current_id}",
+        )
+
+        if canvas_result.json_data is not None:
+            objects = canvas_result.json_data["objects"]
+            if objects:
+                # Get the last added object
+                last_obj = objects[-1]
+                if last_obj["type"] == "rect":
+                    # Convert canvas coordinates to 0-1000 scale
+                    # Canvas: x, y, width, height (top-left based)
+                    # We need [ymin, xmin, ymax, xmax]
+                    xmin = (last_obj["left"] / canvas_width) * 1000
+                    ymin = (last_obj["top"] / canvas_height) * 1000
+                    xmax = ((last_obj["left"] + last_obj["width"]) / canvas_width) * 1000
+                    ymax = ((last_obj["top"] + last_obj["height"]) / canvas_height) * 1000
+                    
+                    if st.button("➕ Save Manual Annotation", use_container_width=True):
+                        if current_id not in st.session_state.metadata:
+                            st.session_state.metadata[current_id] = {"label": current_id, "detections": []}
+                        if "detections" not in st.session_state.metadata[current_id]:
+                             st.session_state.metadata[current_id]["detections"] = []
+                        
+                        st.session_state.metadata[current_id]["detections"].append({
+                            "label": manual_label or "Manual Detection",
+                            "bbox": [ymin, xmin, ymax, xmax]
+                        })
+                        st.success(f"Added '{manual_label}' to record.")
+                        st.rerun()
+
+    # View/Delete existing detections
+    if current_id in st.session_state.metadata and st.session_state.metadata[current_id].get("detections"):
+        with st.expander("📝 Manage Annotations", expanded=False):
+            for i, det in enumerate(st.session_state.metadata[current_id]["detections"]):
+                dcols = st.columns([4, 1])
+                with dcols[0]:
+                    st.write(f"**{det['label']}** (BBOX: {[int(x) for x in det['bbox']]})")
+                with dcols[1]:
+                    if st.button("🗑️", key=f"del_{current_id}_{i}"):
+                        st.session_state.metadata[current_id]["detections"].pop(i)
+                        st.rerun()
 
 # Right side: Metadata
 with col_meta:
@@ -307,7 +405,16 @@ with col_meta:
         for i, (label, key) in enumerate(fields):
             with m_cols[i % 2]:
                 val = data.get(key, 'Undetermined')
-                if key == "people" and isinstance(val, list): val = ", ".join(val)
+                if key == "people" and isinstance(val, list):
+                    # Handle if people are objects instead of strings
+                    processed_people = []
+                    for p in val:
+                        if isinstance(p, dict):
+                            # Try to find a name/label field
+                            processed_people.append(p.get("name") or p.get("label") or str(p))
+                        else:
+                            processed_people.append(str(p))
+                    val = ", ".join(processed_people)
                 st.markdown(f"<div class='meta-field'><div class='meta-label'>{label}</div><div class='meta-value'>{val}</div></div>", unsafe_allow_html=True)
 
         st.markdown(f"<div class='meta-field'><div class='meta-label'>Physical Dimensions</div><div class='meta-value'>{data.get('dimensions', 'N/A')}</div></div>", unsafe_allow_html=True)
@@ -354,7 +461,36 @@ with col_meta:
             if meta_f.get("dimensions"): iiif_metadata.append({"label": {"en": ["Dimensions"]}, "value": {"en": [meta_f["dimensions"]]}})
             if meta_f.get("provenance"): iiif_metadata.append({"label": {"en": ["Provenance"]}, "value": {"en": [meta_f["provenance"]]}})
 
-            manifest_obj["items"].append({
+            # --- BBOX ANNOTATION INTEGRATION ---
+            # Group annotations in an AnnotationPage
+            annotation_items = []
+            if meta_f.get("detections"):
+                for i, det in enumerate(meta_f["detections"]):
+                    label = det.get("label", f"Detection {i+1}")
+                    bbox = det.get("bbox") # [ymin, xmin, ymax, xmax] in 0-1000
+                    
+                    if bbox and len(bbox) == 4:
+                        ymin, xmin, ymax, xmax = bbox
+                        # Scale normalized coordinates to pixels
+                        # x, y, w, h
+                        px = int((xmin / 1000) * img_f["width"])
+                        py = int((ymin / 1000) * img_f["height"])
+                        pw = int(((xmax - xmin) / 1000) * img_f["width"])
+                        ph = int(((ymax - ymin) / 1000) * img_f["height"])
+                        
+                        annotation_items.append({
+                            "id": f"https://app/annotation/{f_id}_{i}",
+                            "type": "Annotation",
+                            "motivation": "commenting",
+                            "body": {
+                                "type": "TextualBody",
+                                "value": label,
+                                "format": "text/plain"
+                            },
+                            "target": f"https://app/canvas/{f_id}#xywh={px},{py},{pw},{ph}"
+                        })
+
+            canvas_obj = {
                 "id": f"https://app/canvas/{f_id}",
                 "type": "Canvas",
                 "label": { "en": [meta_f.get("label", f_id)] },
@@ -376,7 +512,17 @@ with col_meta:
                         "target": f"https://app/canvas/{f_id}"
                     }]
                 }]
-            })
+            }
+
+            # Add the AnnotationPage for metadata detections if any exist
+            if annotation_items:
+                canvas_obj["annotations"] = [{
+                    "id": f"https://app/annotations/{f_id}",
+                    "type": "AnnotationPage",
+                    "items": annotation_items
+                }]
+
+            manifest_obj["items"].append(canvas_obj)
 
         manifest_json_str = json.dumps(manifest_obj, indent=2)
         # Upload manifest to cloud for global access
@@ -459,7 +605,34 @@ mirador_html = f"""
           if (meta.dimensions) iiifMetadata.push({{ label: {{ en: ["Dimensions"] }}, value: {{ en: [meta.dimensions] }} }});
           if (meta.provenance) iiifMetadata.push({{ label: {{ en: ["Provenance"] }}, value: {{ en: [meta.provenance] }} }});
 
-          return {{
+          const annotationItems = [];
+          if (meta.detections) {{
+            meta.detections.forEach((det, i) => {{
+              const label = det.label || `Detection ${{i + 1}}`;
+              const bbox = det.bbox;
+              if (bbox && bbox.length === 4) {{
+                const [ymin, xmin, ymax, xmax] = bbox;
+                const px = Math.round((xmin / 1000) * item.width);
+                const py = Math.round((ymin / 1000) * item.height);
+                const pw = Math.round(((xmax - xmin) / 1000) * item.width);
+                const ph = Math.round(((ymax - ymin) / 1000) * item.height);
+                
+                annotationItems.push({{
+                  "id": `https://app/annotation/${{item.id}}_${{i}}`,
+                  "type": "Annotation",
+                  "motivation": "commenting",
+                  "body": {{
+                    "type": "TextualBody",
+                    "value": label,
+                    "format": "text/plain"
+                  }},
+                  "target": `https://app/canvas/${{item.id}}#xywh=${{px}},${{py}},${{pw}},${{ph}}`
+                }});
+              }}
+            }});
+          }}
+
+          const canvas = {{
             "id": `https://app/canvas/${{item.id}}`,
             "type": "Canvas",
             "label": {{ "en": [meta.label || item.id] }},
@@ -482,6 +655,16 @@ mirador_html = f"""
               }}]
             }}]
           }};
+
+          if (annotationItems.length > 0) {{
+            canvas.annotations = [{{
+              "id": `https://app/annotations/${{item.id}}`,
+              "type": "AnnotationPage",
+              "items": annotationItems
+            }}];
+          }}
+
+          return canvas;
         }}));
 
         const manifest = {{
