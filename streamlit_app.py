@@ -224,6 +224,58 @@ st.markdown("""
         background-color: transparent !important;
     }
 
+    /* GLOBAL FIX: Kill all stubborn white backgrounds */
+    [data-testid="stExpander"] {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        border-radius: 10px !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    /* Target Expander Headers specifically */
+    [data-testid="stExpander"] summary {
+        background-color: rgba(255, 255, 255, 0.02) !important;
+        color: #61DAFB !important; /* Cyan headers */
+        font-weight: 600 !important;
+    }
+    [data-testid="stExpander"] p, [data-testid="stExpander"] div {
+        color: #e0e0e0 !important;
+    }
+
+    /* CODE BLOCKS (IIIF Source) */
+    [data-testid="stCodeBlock"] {
+        background-color: #010409 !important;
+        border: 1px solid #30363d !important;
+        border-radius: 8px !important;
+    }
+    [data-testid="stCodeBlock"] * {
+        color: #79c0ff !important; /* Force JSON keys/values to be readable */
+        font-family: 'JetBrains Mono', monospace !important;
+    }
+
+    /* DOWNLOAD BUTTONS (Export Manifest, Download Manifest) */
+    [data-testid="stDownloadButton"] button, [data-testid="stBaseButton-secondary"] {
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2)) !important;
+        border: 1px solid rgba(99, 102, 241, 0.5) !important;
+        color: #ffffff !important;
+        border-radius: 8px !important;
+        padding: 0.5rem 1rem !important;
+        font-weight: 500 !important;
+        width: 100% !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+    }
+    [data-testid="stDownloadButton"] button:hover {
+        border-color: #61DAFB !important;
+        color: #61DAFB !important;
+        background: rgba(99, 102, 241, 0.3) !important;
+    }
+
+    /* Sidebar Export Button Fix */
+    [data-testid="stSidebar"] [data-testid="stDownloadButton"] button {
+        background: rgba(34, 197, 94, 0.1) !important; /* Subtle green for sidebar export */
+        border-color: rgba(34, 197, 94, 0.3) !important;
+    }
+
     /* Glass Cards */
     .glass-card {
         background: rgba(255, 255, 255, 0.05);
