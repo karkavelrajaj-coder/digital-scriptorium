@@ -215,6 +215,15 @@ st.markdown("""
         color: white !important;
     }
 
+    /* SPECIFIC FIX: Neutralize white space in Custom Components (Canvas) */
+    iframe[data-testid="stCustomComponentV1"] {
+        background-color: transparent !important;
+        color-scheme: dark !important;
+    }
+    [data-testid="stVerticalBlock"] > div:has(iframe[data-testid="stCustomComponentV1"]) {
+        background-color: transparent !important;
+    }
+
     /* Glass Cards */
     .glass-card {
         background: rgba(255, 255, 255, 0.05);
