@@ -47,10 +47,14 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Inter:wght@300;400;500&display=swap');
 
-    /* Global Typography Enhancements (Works with theme config) */
-    h1, h2, h3, h4, h5, h6 {
-        font-family: 'Outfit', sans-serif !important;
-        letter-spacing: -0.02em !important;
+    /* Global Typography Enhancements */
+    h1, h2, h3, h4, h5, h6, p, div, span {
+        color: #e0e0e0 !important; /* Ensure light text for dark background */
+    }
+
+    /* SPECIFIC FIX: Force Dark Background for the whole app */
+    .stApp {
+        background-color: #0e1117 !important;
     }
 
     /* SPECIFIC FIX: Sidebar Toggle Visibility */
@@ -78,14 +82,14 @@ st.markdown("""
     .meta-label {
         font-size: 0.75rem;
         text-transform: uppercase;
-        color: #6366f1; /* More robust Indigo for light/dark */
+        color: #61DAFB !important; /* Bright cyan for dark mode */
         font-weight: 700;
         margin-bottom: 5px;
     }
     .meta-value {
         font-size: 1.05rem;
         margin-bottom: 15px;
-        color: inherit;
+        color: #ffffff !important;
     }
 
     /* Custom Gradient Buttons */
@@ -339,8 +343,10 @@ with col_view:
         scale_factor = canvas_width / image_data["width"]
         canvas_height = int(image_data["height"] * scale_factor)
         
-        # Load PIL image for the canvas
+        # Use a more reliable way to serve background to canvas
+        # We resize the image manually to match canvas dimensions to solve the 'no attribute height' issue
         img_pil = Image.open(io.BytesIO(image_bytes))
+        img_resized = img_pil.resize((canvas_width, canvas_height))
         
         # Selection tools
         tool_col1, tool_col2 = st.columns([2, 1])
@@ -353,7 +359,7 @@ with col_view:
             fill_color="rgba(255, 165, 0, 0.3)",
             stroke_width=3,
             stroke_color=rect_color,
-            background_image=img_pil,
+            background_image=img_resized,
             update_streamlit=True,
             height=canvas_height,
             width=canvas_width,
