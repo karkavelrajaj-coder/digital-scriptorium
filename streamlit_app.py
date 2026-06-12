@@ -78,13 +78,14 @@ st.markdown("""
     .meta-label {
         font-size: 0.75rem;
         text-transform: uppercase;
-        color: #61DAFB;
+        color: #6366f1; /* More robust Indigo for light/dark */
         font-weight: 700;
         margin-bottom: 5px;
     }
     .meta-value {
         font-size: 1.05rem;
         margin-bottom: 15px;
+        color: inherit;
     }
 
     /* Custom Gradient Buttons */
@@ -174,6 +175,18 @@ st.markdown("""
     footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
+
+# --- Internal Utilities ---
+def format_list_field(val):
+    if not isinstance(val, list):
+        return str(val)
+    processed = []
+    for item in val:
+        if isinstance(item, dict):
+            processed.append(item.get("name") or item.get("label") or str(item))
+        else:
+            processed.append(str(item))
+    return ", ".join(processed)
 
 # --- Session State Initialization ---
 if 'metadata' not in st.session_state:
@@ -405,16 +418,8 @@ with col_meta:
         for i, (label, key) in enumerate(fields):
             with m_cols[i % 2]:
                 val = data.get(key, 'Undetermined')
-                if key == "people" and isinstance(val, list):
-                    # Handle if people are objects instead of strings
-                    processed_people = []
-                    for p in val:
-                        if isinstance(p, dict):
-                            # Try to find a name/label field
-                            processed_people.append(p.get("name") or p.get("label") or str(p))
-                        else:
-                            processed_people.append(str(p))
-                    val = ", ".join(processed_people)
+                if key == "people":
+                    val = format_list_field(val)
                 st.markdown(f"<div class='meta-field'><div class='meta-label'>{label}</div><div class='meta-value'>{val}</div></div>", unsafe_allow_html=True)
 
         st.markdown(f"<div class='meta-field'><div class='meta-label'>Physical Dimensions</div><div class='meta-value'>{data.get('dimensions', 'N/A')}</div></div>", unsafe_allow_html=True)
@@ -454,8 +459,7 @@ with col_meta:
             if meta_f.get("classification"): iiif_metadata.append({"label": {"en": ["Classification"]}, "value": {"en": [meta_f["classification"]]}})
             if meta_f.get("date"): iiif_metadata.append({"label": {"en": ["Date"]}, "value": {"en": [meta_f["date"]]}})
             if meta_f.get("people"): 
-                people_val = meta_f["people"]
-                if isinstance(people_val, list): people_val = ", ".join(people_val)
+                people_val = format_list_field(meta_f["people"])
                 iiif_metadata.append({"label": {"en": ["People"]}, "value": {"en": [people_val]}})
             if meta_f.get("medium"): iiif_metadata.append({"label": {"en": ["Medium"]}, "value": {"en": [meta_f["medium"]]}})
             if meta_f.get("dimensions"): iiif_metadata.append({"label": {"en": ["Dimensions"]}, "value": {"en": [meta_f["dimensions"]]}})
