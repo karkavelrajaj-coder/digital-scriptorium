@@ -487,8 +487,9 @@ with col_view:
         st.caption("Draw a rectangle on the image below, then give it a label.")
         
         # We need to scale the canvas to fit the column width but keep aspect ratio
-        canvas_width = 700 
-        scale_factor = canvas_width / image_data["width"]
+        max_canvas_width = 700 
+        scale_factor = min(max_canvas_width / image_data["width"], 1.0) # Constrain to max width
+        canvas_width = int(image_data["width"] * scale_factor)
         canvas_height = int(image_data["height"] * scale_factor)
         
         # Use a more reliable way to serve background to canvas
