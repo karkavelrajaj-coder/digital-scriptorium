@@ -23,14 +23,56 @@ if not api_key and HAS_STREAMLIT:
 
 client = OpenAI(api_key=api_key) if api_key else None
 
+import io
+from PIL import Image, ImageDraw
+
 def analyze_image_bytes(image_bytes, image_id):
     """
-    Uses GPT-4o Vision to analyze an image (as bytes) and return structured metadata.
+    Uses High-Contrast Anchors to ground AI spatial perception.
     """
     if not client:
-        return {"error": "OpenAI API key not found. Please set it in .env or Streamlit secrets."}
+        return {"error": "OpenAI API key not found."}
 
-    base64_image = base64.b64encode(image_bytes).decode('utf-8')
+    original_img = Image.open(io.BytesIO(image_bytes))
+    w, h = original_img.size
+    img = original_img.copy()
+    draw = ImageDraw.Draw(img)
+    
+    # Draw huge, high-contrast anchor points
+    anchors = [
+        (0, 0), (500, 0), (1000, 0),
+        (0, 500), (500, 500), (1000, 500),
+        (0, 1000), (500, 1000), (1000, 1000)
+    ]
+    
+    for ax, ay in anchors:
+        px = int((ax/1000) * (w-1))
+        py = int((ay/1000) * (h-1))
+        
+        # Draw a big black dot with white cross
+        box_size = 80
+        draw.rectangle([px-box_size, py-box_size, px+box_size, py+box_size], fill="black")
+        draw.line([(px-box_size, py), (px+box_size, py)], fill="white", width=5)
+        draw.line([(px, py-box_size), (px, py+box_size)], fill="white", width=5)
+        
+        # Draw the coordinate text
+        text = f"{ax},{ay}"
+        draw.text((px-50, py+box_size+5), text, fill="red")
+
+    # Save to buffer for AI
+    buff = io.BytesIO()
+    img.save(buff, format="JPEG")
+    base64_image = base64.b64encode(buff.getvalue()).decode('utf-8')
+
+    prompt = (
+        "Analyze this archival document image and provide a professional description. "
+        "I have added 9 BLACK ANCHORS with labels like '500,500' (X,Y) to guide you. "
+        "Use these as reference points to provide pixel-perfect bounding boxes. "
+        "Provide a JSON response with: "
+        "'label' (document title), 'classification', 'date', 'people', 'medium', 'dimensions', 'provenance', 'description', "
+        "'detections' (list of stamps/signatures). "
+        "Each detection MUST have 'label' and 'bbox' ([ymin, xmin, ymax, xmax] in 0-1000 scale)."
+    )
 
     try:
         response = client.chat.completions.create(
@@ -38,31 +80,17 @@ def analyze_image_bytes(image_bytes, image_id):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a professional archival expert. Always respond in valid JSON format."
+                    "content": "You are a professional archival expert. Be extremely precise with spatial coordinates."
                 },
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "type": "text", 
-                            "text": (
-                                "Analyze this archival document image and provide a professional, museum-grade description. "
-                                "Provide a JSON response with the following fields: "
-                                "'label' (short, authoritative title), "
-                                "'classification' (e.g., Documents, Photography, Correspondence), "
-                                "'date' (estimated or specific historical date), "
-                                "'people' (Artist, signatories, or key individuals mentioned), "
-                                "'medium' (Materials and technique, e.g., Ink on aged paper, stamp), "
-                                "'dimensions' (Estimated or observed physical size), "
-                                "'provenance' (Historical context or ownership history if detectable), "
-                                "'description' (A rich 3-4 sentence narrative description of content and condition). "
-                            )
-                        },
+                        {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
                             "image_url": {
                                 "url": f"data:image/jpeg;base64,{base64_image}",
-                                "detail": "low" # Using low detail for high-res archival documents to improve stability
+                                "detail": "high" 
                             },
                         },
                     ],
@@ -73,21 +101,19 @@ def analyze_image_bytes(image_bytes, image_id):
         )
 
         content = response.choices[0].message.content
-        
-        if content is None:
-            finish_reason = response.choices[0].finish_reason
-            return {"error": f"AI returned no content. Reason: {finish_reason}. This usually happens when an image is extremely large or triggers a safety filter."}
-
-        analysis = json.loads(content)
-        return analysis
-    except Exception as e:
-        print(f"Error analyzing image {image_id}: {e}")
-        return {
-            "error": f"AI Analysis failed: {str(e)}",
-            "label": f"Image {image_id}",
-            "classification": "Incomplete",
-            "date": "N/A"
+        data = json.loads(content)
+        # Ensure it has the metadata fields the app expects
+        defaults = {
+            "label": "Document", "classification": "Archival", "date": "Unknown",
+            "people": [], "medium": "Paper", "dimensions": "Unknown",
+            "provenance": "Unknown", "description": ""
         }
+        for k, v in defaults.items():
+            if k not in data: data[k] = v
+        return data
+    except Exception as e:
+        print(f"Error: {e}")
+        return {"error": str(e), "label": f"Image {image_id}"}
 
 # Helpers for metadata storage (can work with session state too)
 def save_metadata(metadata, filename="metadata.json"):
