@@ -80,6 +80,31 @@ st.markdown("""
         fill: #ffffff !important;
     }
 
+    /* SPECIFIC FIX: Fix white File Uploader */
+    [data-testid="stFileUploader"] {
+        background-color: rgba(255, 255, 255, 0.05) !important;
+        border: 1px dashed rgba(255, 255, 255, 0.2) !important;
+        border-radius: 15px !important;
+        padding: 10px !important;
+    }
+    [data-testid="stFileUploader"] section {
+        background-color: transparent !important;
+        color: #e0e0e0 !important;
+    }
+    [data-testid="stFileUploader"] section div {
+        color: #e0e0e0 !important;
+    }
+    [data-testid="stFileUploader"] label {
+        color: #61DAFB !important;
+    }
+    
+    /* Browse Files button inside uploader */
+    [data-testid="stFileUploader"] button {
+        background: rgba(99, 102, 241, 0.2) !important;
+        border: 1px solid rgba(99, 102, 241, 0.5) !important;
+        color: white !important;
+    }
+
     /* Glass Cards */
     .glass-card {
         background: rgba(255, 255, 255, 0.05);
