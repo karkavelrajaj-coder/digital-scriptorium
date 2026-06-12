@@ -243,14 +243,17 @@ st.markdown("""
     }
 
     /* CODE BLOCKS (IIIF Source) */
-    [data-testid="stCodeBlock"] {
-        background-color: #010409 !important;
-        border: 1px solid #30363d !important;
-        border-radius: 8px !important;
+    [data-testid="stCodeBlock"], [data-testid="stCodeBlock"] pre, [data-testid="stCodeBlock"] code {
+        background-color: #111111 !important;
+        color: #61DAFB !important;
+        border: 1px solid #333333 !important;
+        text-shadow: none !important;
     }
-    [data-testid="stCodeBlock"] * {
-        color: #79c0ff !important; /* Force JSON keys/values to be readable */
-        font-family: 'JetBrains Mono', monospace !important;
+    
+    /* Ensure syntax highlighting doesn't make it invisible */
+    [data-testid="stCodeBlock"] span {
+        color: #ffffff !important;
+        background: transparent !important;
     }
 
     /* DOWNLOAD BUTTONS (Export Manifest, Download Manifest) */
